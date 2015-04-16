@@ -33,7 +33,13 @@ object swaggerMacro {
             val pc = merge(rest, names.tail)
             PathContext(
               s"{${names.head}}" :: pc.segments,
-              ParamContext(names.head, "number") :: pc.params
+              ParamContext(names.head, "integer") :: pc.params
+            )
+          case q"Segment" :: rest ⇒
+            val pc = merge(rest, names.tail)
+            PathContext(
+              s"{${names.head}}" :: pc.segments,
+              ParamContext(names.head, "string") :: pc.params
             )
           case Nil ⇒
             PathContext(Nil, Nil)

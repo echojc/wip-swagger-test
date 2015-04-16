@@ -17,9 +17,9 @@ trait Abc extends HttpService {
           s"just pet $petId with food $foodId"
         }
       } ~
-      path("owners") {
+      path("owners" / Segment) { name ⇒
         complete {
-          "all owners"
+          s"owner $name"
         }
       }
     } ~
