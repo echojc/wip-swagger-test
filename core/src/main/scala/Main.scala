@@ -24,9 +24,9 @@ trait Abc extends HttpService {
       }
     } ~
     post {
-      path("pets" / "release") {
+      path("pets") {
         complete {
-          "released all pets!"
+          "posted all pets!"
         }
       }
     }
