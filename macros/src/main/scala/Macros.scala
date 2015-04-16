@@ -43,7 +43,7 @@ object swaggerMacro {
             )
           case Nil ⇒
             PathContext(Nil, Nil)
-          case _ ⇒
+          case t ⇒
             c.abort(c.enclosingPosition, s"unknown path matcher: [${showRaw(t)}]")
         }
       }
