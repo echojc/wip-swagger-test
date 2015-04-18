@@ -51,12 +51,30 @@ object swaggerMacro {
       merge(convertTreeToList(t), names)
     }
 
+    object Directive {
+      def unapply(tree: Tree): Option[(String, List[Tree])] = tree match {
+        case Apply(Select(Apply(Apply(_, List(t @ Select(This(_), TermName(name)))), _), _), body)
+        ⇒ //if t.symbol.info.resultType <:< typeOf[spray.routing.Directive[_]] ⇒
+          Some((name, body))
+        case _ ⇒
+          None
+      }
+    }
+
     def loop(t: Tree, rc: RouteContext, out: List[RouteContext]): List[RouteContext] = {
       t match {
+        case Directive("get", body) ⇒
+          println(s"####### GET ########\n$body\n#####")
+          body flatMap { arg ⇒
+            loop(arg, rc.copy(method = "get"), out)
+          }
+        case Directive("path", body) ⇒
+          println(s"####### PATH ########\n$body\n#####")
+          Nil
         case apply: Apply ⇒
           val fun = apply.fun
           val args = apply.args
-          //println(s"# [$fun] [$args]")
+          println(s"# [${showRaw(fun)}] [$args]")
           fun match {
             case q"get" ⇒
               args flatMap { arg ⇒
@@ -81,7 +99,7 @@ object swaggerMacro {
                 loop(arg, rc, out)
               }
             case t ⇒
-              c.abort(c.enclosingPosition, s"unknown directive: [${showRaw(t)}]")
+              c.abort(c.enclosingPosition, s"unknown directive: [${show(t)}]")
           }
         case q"(..$params) ⇒ $expr" ⇒ // deconstruct functions
           loop(expr, rc, out)
@@ -103,25 +121,53 @@ object swaggerMacro {
     }
 
     val inputs = annottees map (_.tree)
-    val outputs = inputs map {
-      case q"val $route = $body" ⇒
-        val rcs = loop(body, RouteContext.empty, Nil)
-        q"""
-          val $route =
-            (get & path("swagger.json")) {
-              complete {
-                import spray.httpx.SprayJsonSupport._
-                swaggerMacro.routeContextsToSwaggerSpec($rcs)
-              }
-            } ~
-            $body
-        """
-      case _ ⇒
-        c.abort(c.enclosingPosition, "vals only")
+    val outputs = inputs flatMap { tree ⇒
+      c.typecheck(tree) match {
+        case c: ClassDef ⇒
+          val routes = c.impl.body collect {
+            case t: ValOrDefDef if t.symbol.info =:= typeOf[spray.routing.Route] ⇒ t
+          }
+
+          routes map { route ⇒
+            val body = route.rhs
+            val rcs = loop(body, RouteContext.empty, Nil)
+            q"""
+              val $route =
+                (get & path("swagger.json")) {
+                  complete {
+                    import spray.httpx.SprayJsonSupport._
+                    swaggerMacro.routeContextsToSwaggerSpec($rcs)
+                  }
+                } ~
+                $body
+            """
+          }
+        case _ ⇒
+          c.abort(c.enclosingPosition, "classes/traits only")
+      }
+      //tree match {
+      //  case q"val $route = $body" ⇒
+      //    val rcs = loop(body, RouteContext.empty, Nil)
+      //    q"""
+      //      val $route =
+      //        (get & path("swagger.json")) {
+      //          complete {
+      //            import spray.httpx.SprayJsonSupport._
+      //            swaggerMacro.routeContextsToSwaggerSpec($rcs)
+      //          }
+      //        } ~
+      //        $body
+      //    """
+      //  case _ ⇒
+      //    c.abort(c.enclosingPosition, "vals only")
+      //}
     }
 
+    //c.Expr[Any] { q"""
+    //  ..${outputs}
+    //""" }
     c.Expr[Any] { q"""
-      ..${outputs}
+      ..${inputs}
     """ }
   }
 
