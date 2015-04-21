@@ -6,9 +6,12 @@ object MyBuild extends Build {
     scalaVersion := "2.11.5",
     resolvers ++= Seq(
       Resolver.sonatypeRepo("releases"),
+      "oss sonatype" at "https://oss.sonatype.org/content/repositories/releases",
       "spray repo" at "http://repo.spray.io"
     ),
     libraryDependencies ++= Seq(
+      "org.scalatest" %% "scalatest" % "2.2.2" % "test",
+      "io.spray" %% "spray-testkit" % "1.3.1" % "test",
       "com.typesafe.akka" %% "akka-actor" % "2.3.6",
       "io.spray" %% "spray-can" % "1.3.1",
       "io.spray" %% "spray-routing" % "1.3.1",
@@ -35,6 +38,7 @@ object MyBuild extends Build {
     file("macros"),
     settings = commonSettings ++ Seq(
       libraryDependencies <+= (scalaVersion)("org.scala-lang" % "scala-reflect" % _),
+      libraryDependencies += "org.scalamacros" %% "resetallattrs" % "1.0.0-M1",
       scalacOptions ++= Seq(
         "-language:experimental.macros"
       )
