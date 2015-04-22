@@ -30,6 +30,31 @@ class Test extends Spec {
       )
     }
   }
+
+  //it("simple path") {
+  //  @swagged trait SimpleGet extends TestRoute {
+  //    val route =
+  //      path("cats") {
+  //        complete {
+  //          "meow"
+  //        }
+  //      }
+  //  }
+
+  //  testRoute(new SimpleGet{}) {
+  //    responseAs[SwaggerSpec] shouldBe SwaggerSpec(
+  //      "2.0",
+  //      SwaggerSpec.Info("wip", "0"),
+  //      Map(
+  //        "/cats" → SwaggerSpec.PathInfo(
+  //          get = Some(SwaggerSpec.Operation(Map(
+  //            "200" → SwaggerSpec.Response("")
+  //          )))
+  //        )
+  //      )
+  //    )
+  //  }
+  //}
 }
 
 trait Spec

@@ -52,119 +52,47 @@ object swaggedMacro {
 //
 //      merge(convertTreeToList(t), names)
 //    }
-//
-//    object Directive {
-//      def unapply(tree: Tree): Option[(String, List[Tree])] = tree match {
-//        case Apply(Select(Apply(Apply(_, List(t @ Select(This(_), TermName(name)))), _), _), body)
-//          if t.symbol.info.resultType <:< typeOf[spray.routing.Directive[_]] ⇒
-//          Some((name, body))
-//        case _ ⇒
-//          None
-//      }
-//    }
-//
-//    def loop(t: Tree, rc: RouteContext, out: List[RouteContext]): List[RouteContext] = {
-//      t match {
-//        case Directive("get", body) ⇒
-//          println(s"####### GET ########\n$body\n#####")
-//          Nil
-//        case Directive("path", body) ⇒
-//          println(s"####### PATH ########\n$body\n#####")
-//          Nil
-//        case apply: Apply ⇒
-//          val fun = apply.fun
-//          val args = apply.args
-//          println(s"# [${showRaw(fun)}] [$args]")
-//          fun match {
-//            case q"get" ⇒
-//              args flatMap { arg ⇒
-//                loop(arg, rc.copy(method = "get"), out)
-//              }
-//            case q"post" ⇒
-//              args flatMap { arg ⇒
-//                loop(arg, rc.copy(method = "post"), out)
-//              }
-//            case q"path($pathMatcher)" ⇒
-//              args flatMap { arg ⇒
-//                val names: List[String] = arg match {
-//                  case q"(..$params) ⇒ $expr" ⇒ (params map (_.name.decodedName.toString)).toList
-//                  case _                      ⇒ Nil
-//                }
-//                loop(arg, rc.copy(path = parsePathMatcher(pathMatcher, names)), out)
-//              }
-//            case q"complete" ⇒
-//              rc :: out
-//            case q"$expr.~" ⇒ // or'd routes
-//              (expr :: args) flatMap { arg ⇒
-//                loop(arg, rc, out)
-//              }
-//            case t ⇒
-//              c.abort(c.enclosingPosition, s"unknown directive: [${show(t)}]")
-//          }
-//        case q"(..$params) ⇒ $expr" ⇒ // deconstruct functions
-//          loop(expr, rc, out)
-//        case q"{ ..$exprs }" ⇒ // deconstruct blocks - MUST come after functions
-//          loop(exprs.last, rc, out)
-//        case t ⇒
-//          c.abort(c.enclosingPosition, s"unknown route definition: [${showRaw(t)}]")
-//      }
-//    }
-//
-//    implicit val lift3 = Liftable[ParamContext] { pc ⇒
-//      q"swaggerMacro.ParamContext(${pc.name}, ${pc.dataType})"
-//    }
-//    implicit val lift2 = Liftable[PathContext] { pc ⇒
-//      q"swaggerMacro.PathContext(${pc.segments}, ${pc.params})"
-//    }
-//    implicit val lift1 = Liftable[RouteContext] { rc ⇒
-//      q"swaggerMacro.RouteContext(${rc.method}, ${rc.path})"
-//    }
 
-//    val outputs = inputs flatMap { tree ⇒
-//      c.typecheck(tree) match {
-//        case c: ClassDef ⇒
-//          val routes = c.impl.body collect {
-//            case t: ValOrDefDef if t.symbol.info =:= typeOf[spray.routing.Route] ⇒ t
-//          }
-//
-//          routes map { route ⇒
-//            val body = route.rhs
-//            val rcs = loop(body, RouteContext.empty, Nil)
-//            q"""
-//              val $route =
-//                (get & path("swagger.json")) {
-//                  complete {
-//                    import spray.httpx.SprayJsonSupport._
-//                    swaggerMacro.routeContextsToSwaggerSpec($rcs)
-//                  }
-//                } ~
-//                $body
-//            """
-//          }
-//        case _ ⇒
-//          c.abort(c.enclosingPosition, "classes/traits only")
-//      }
-//      //tree match {
-//      //  case q"val $route = $body" ⇒
-//      //    val rcs = loop(body, RouteContext.empty, Nil)
-//      //    q"""
-//      //      val $route =
-//      //        (get & path("swagger.json")) {
-//      //          complete {
-//      //            import spray.httpx.SprayJsonSupport._
-//      //            swaggerMacro.routeContextsToSwaggerSpec($rcs)
-//      //          }
-//      //        } ~
-//      //        $body
-//      //    """
-//      //  case _ ⇒
-//      //    c.abort(c.enclosingPosition, "vals only")
-//      //}
-//    }
+    object Directive {
+      def unapply(t: Tree): Option[(Tree, Tree)] = t match {
+        case q"routing.this.Directive.pimpApply[$_]($directive)($_).apply(..$inner)" ⇒
+          if (inner.size > 1)
+            c.warning(t.pos, s"pimpApply takes 1 argument but found more [$inner]")
+          Some((directive, inner.head))
+        case _ ⇒
+          None
+      }
+    }
+
+    object Complete {
+      def unapply(t: Tree): Boolean = t match {
+        case q"$lhs.apply(..$_)" ⇒
+          lhs.symbol.fullName == "spray.routing.directives.RouteDirectives.complete"
+        case _ ⇒
+          false
+      }
+    }
+
+    def resolveDirective(t: Tree): RouteContext ⇒ List[RouteContext] = t match {
+      case t if t.symbol.fullName == "spray.routing.directives.MethodDirectives.get" ⇒
+        (r: RouteContext) ⇒ List(r.copy(method = RouteContext.Method.Get))
+      case t ⇒
+        c.warning(t.pos, s"unknown directive [$t]")
+        List(_)
+    }
 
     // TODO: implement stuff
-    def parseRoute(t: Tree): List[RouteContext] =
-      List(RouteContext(RouteContext.Method.Get, Nil))
+    def parseRoute(t: Tree): RouteContext ⇒ List[RouteContext] = {
+      t match {
+        case Directive(directive, inner) ⇒
+          resolveDirective(directive) andThen (_ flatMap parseRoute(inner))
+        case Complete() ⇒
+          List(_)
+        case _ ⇒
+          c.warning(t.pos, s"unknown route structure [$t]")
+          List(_)
+      }
+    }
 
     object OptimusPrime extends Transformer {
       implicit val lift3 = Liftable[RouteContext.Method] {
@@ -189,7 +117,7 @@ object swaggedMacro {
         case t: ValDef if t.symbol.info =:= typeOf[spray.routing.Route] ⇒
           val result = super.transform(t)
           val ValDef(a1, a2, a3, rhs) = result
-          val routeCtxs = parseRoute(rhs)
+          val routeCtxs = parseRoute(rhs)(RouteContext.empty)
           val transformedRoute = q"""
             (get & path("swagger.json")) {
               complete {
