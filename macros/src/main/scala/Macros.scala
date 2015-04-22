@@ -16,43 +16,6 @@ object swaggedMacro {
   def impl(c: Context)(annottees: c.Expr[Any]*): c.Expr[Any] = {
     import c.universe._
 
-//    def parsePathMatcher(t: Tree, names: List[String]): PathContext = {
-//      def convertTreeToList(tree: Tree): List[Tree] = {
-//        tree match {
-//          case q"$lhs / $rhs" ⇒
-//            convertTreeToList(lhs) :+ rhs
-//          case t ⇒
-//            List(t)
-//        }
-//      }
-//
-//      def merge(ts: List[Tree], names: List[String]): PathContext = {
-//        ts match {
-//          case Literal(Constant(str: String)) :: rest ⇒
-//            val pc = merge(rest, names)
-//            PathContext(str :: pc.segments, pc.params)
-//          case q"IntNumber" :: rest ⇒
-//            val pc = merge(rest, names.tail)
-//            PathContext(
-//              s"{${names.head}}" :: pc.segments,
-//              ParamContext(names.head, "integer") :: pc.params
-//            )
-//          case q"Segment" :: rest ⇒
-//            val pc = merge(rest, names.tail)
-//            PathContext(
-//              s"{${names.head}}" :: pc.segments,
-//              ParamContext(names.head, "string") :: pc.params
-//            )
-//          case Nil ⇒
-//            PathContext(Nil, Nil)
-//          case t ⇒
-//            c.abort(c.enclosingPosition, s"unknown path matcher: [${showRaw(t)}]")
-//        }
-//      }
-//
-//      merge(convertTreeToList(t), names)
-//    }
-
     object Directive {
       def unapply(t: Tree): Option[(Tree, Tree)] = t match {
         case q"routing.this.Directive.pimpApply[$_]($directive)($_).apply(..$inner)" ⇒
@@ -73,16 +36,38 @@ object swaggedMacro {
       }
     }
 
-    def resolveDirective(t: Tree): RouteContext ⇒ List[RouteContext] = t match {
-      case t if t.symbol.fullName == "spray.routing.directives.MethodDirectives.get" ⇒
-        (r: RouteContext) ⇒ List(r.copy(method = RouteContext.Method.Get))
-      case t ⇒
-        c.warning(t.pos, s"unknown directive [$t]")
-        List(_)
-    }
+    def resolveSegment(t: Tree): Option[RouteContext.Segment] =
+      t match {
+        case Apply(_, List(Literal(Constant(path: String)))) if t.symbol.fullName == "spray.routing.ImplicitPathMatcherConstruction.segmentStringToPathMatcher" ⇒
+          Some(RouteContext.Segment.Fixed(path))
+        case _ ⇒
+          c.warning(t.pos, s"unknown pathmatcher [$t]")
+          None
+      }
 
-    // TODO: implement stuff
-    def parseRoute(t: Tree): RouteContext ⇒ List[RouteContext] = {
+    def resolvePath(segments: List[Tree]): List[RouteContext.Segment] =
+      segments match {
+        case next :: rest ⇒
+          resolveSegment(next) match {
+            case Some(segment) ⇒ segment :: resolvePath(rest)
+            case None          ⇒ resolvePath(rest)
+          }
+        case Nil ⇒ Nil
+      }
+
+    def resolveDirective(t: Tree): RouteContext ⇒ List[RouteContext] =
+      t.symbol.fullName match {
+        case "spray.routing.directives.MethodDirectives.get" ⇒
+          (r: RouteContext) ⇒ List(r.copy(method = RouteContext.Method.Get))
+        case "spray.routing.directives.PathDirectives.path" ⇒
+          val Apply(_, segments) = t
+          (r: RouteContext) ⇒ List(r.copy(path = r.path ++ resolvePath(segments)))
+        case _ ⇒
+          c.warning(t.pos, s"unknown directive [$t]")
+          List(_)
+      }
+
+    def parseRoute(t: Tree): RouteContext ⇒ List[RouteContext] =
       t match {
         case Directive(directive, inner) ⇒
           resolveDirective(directive) andThen (_ flatMap parseRoute(inner))
@@ -92,7 +77,6 @@ object swaggedMacro {
           c.warning(t.pos, s"unknown route structure [$t]")
           List(_)
       }
-    }
 
     object OptimusPrime extends Transformer {
       implicit val lift3 = Liftable[RouteContext.Method] {
@@ -101,7 +85,7 @@ object swaggedMacro {
         case RouteContext.Method.Post ⇒
           q"RouteContext.Method.Post"
         case RouteContext.Method.None ⇒
-          c.abort(c.enclosingPosition, "can't no method")
+          q"RouteContext.Method.None"
       }
       implicit val lift2 = Liftable[RouteContext.Segment] {
         case RouteContext.Segment.Param(n, d) ⇒
@@ -118,10 +102,16 @@ object swaggedMacro {
           val result = super.transform(t)
           val ValDef(a1, a2, a3, rhs) = result
           val routeCtxs = parseRoute(rhs)(RouteContext.empty)
+
+          // TODO: no method means all?
+          val (methodCtxs, noMethodCtxs) = routeCtxs partition (_.method != RouteContext.Method.None)
+          if (!noMethodCtxs.isEmpty)
+            c.warning(t.pos, s"found routes without http method [$noMethodCtxs]")
+
           val transformedRoute = q"""
             (get & path("swagger.json")) {
               complete {
-                RouteContext.toSwaggerSpec($routeCtxs)
+                RouteContext.toSwaggerSpec($methodCtxs)
               }
             } ~ $rhs
           """
