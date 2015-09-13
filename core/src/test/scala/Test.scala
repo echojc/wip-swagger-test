@@ -1,8 +1,11 @@
-import org.scalatest._
-import spray.testkit._
-import spray.routing._
-import spray.httpx._
 import akka.actor._
+
+import org.scalatest._
+import spray.httpx._
+import spray.routing._
+import spray.testkit._
+
+import sh.echo.swagged._
 
 class Test extends Spec {
 
@@ -80,8 +83,8 @@ class Test extends Spec {
               "200" → SwaggerSpec.Response("")
             ),
             Some(List(
-              SwaggerSpec.Parameter("name", in = "path", required = true, `type` = "string"),
-              SwaggerSpec.Parameter("catId", in = "path", required = true, `type` = "integer")
+              SwaggerSpec.Parameter("name", SwaggerSpec.Parameter.In.path, required = true, `type` = "string"),
+              SwaggerSpec.Parameter("catId", SwaggerSpec.Parameter.In.path, required = true, `type` = "integer")
             ))))
           )
         )

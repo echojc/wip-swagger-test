@@ -16,7 +16,7 @@ object SwaggerSpec {
 
   object Parameter {
     object In extends Enumeration {
-      val Query, Header, Path, FormData, Body = Value
+      val query, header, path, formData, body = Value
       implicit val jf = new JsonFormat[Value] {
         def write(v: Value) = JsString(v.toString)
         def read(v: JsValue) = Try(withName(v.asInstanceOf[JsString].value)) match {

@@ -25,7 +25,7 @@ object RouteContext {
       rc.path collect { case Segment.Param(name, dataType) ⇒
         SwaggerSpec.Parameter(
           name,
-          SwaggerSpec.Parameter.In.Path,
+          SwaggerSpec.Parameter.In.path,
           true,
           dataType
         )
@@ -49,28 +49,5 @@ object RouteContext {
         pathStr → SwaggerSpec.PathInfo(get, post)
       }.toMap
     )
-  }
-}
-
-trait RouteContextLiftable {
-  val universe: Universe
-  import universe._
-
-  implicit val lift3 = Liftable[RouteContext.Method.Value] {
-    case RouteContext.Method.Get ⇒
-      q"_root_.sh.echo.swagged.RouteContext.Method.Get"
-    case RouteContext.Method.Post ⇒
-      q"_root_.sh.echo.swagged.RouteContext.Method.Post"
-    case RouteContext.Method.None ⇒
-      q"_root_.sh.echo.swagged.RouteContext.Method.None"
-  }
-  implicit val lift2 = Liftable[RouteContext.Segment] {
-    case RouteContext.Segment.Param(n, d) ⇒
-      q"_root_.sh.echo.swagged.RouteContext.Segment.Param($n, $d)"
-    case RouteContext.Segment.Fixed(v) ⇒
-      q"_root_.sh.echo.swagged.RouteContext.Segment.Fixed($v)"
-  }
-  implicit val lift1 = Liftable[RouteContext] { rc ⇒
-    q"_root_.sh.echo.swagged.RouteContext(${rc.method}, ${rc.path})"
   }
 }

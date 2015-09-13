@@ -1,23 +1,13 @@
+package sh.echo.swagged
+
 import scala.language.experimental.macros
-import scala.reflect.macros.whitebox.Context
-import scala.annotation.StaticAnnotation
-import scala.annotation.compileTimeOnly
 import scala.annotation.tailrec
-import spray.routing._
-import spray.json.DefaultJsonProtocol
-import spray.json.NullOptions
+import scala.reflect.macros.whitebox.Context
+
 import org.scalamacros.resetallattrs._
+import spray.routing._
 
-import sh.echo.swagged.RouteContext
-import sh.echo.swagged.RouteContextLiftable
-import sh.echo.swagged.SwaggerSpec
-
-@compileTimeOnly("enable macro paradise to expand macro annotations")
-class swagged extends StaticAnnotation {
-  def macroTransform(annottees: Any*): Any = macro swaggedMacro.impl
-}
-
-object swaggedMacro {
+object SwaggedMacro {
   def impl(c: Context)(annottees: c.Expr[Any]*): c.Expr[Any] = {
     import c.universe._
 
@@ -93,7 +83,7 @@ object swaggedMacro {
         case "spray.routing.directives.MethodDirectives.get" ⇒
           (r: RouteContext) ⇒ List(r.copy(method = RouteContext.Method.Get))
         case "spray.routing.directives.PathDirectives.path" ⇒
-          val Apply(_, paths) = t
+          val q"$_(..$paths)" = t
           (r: RouteContext) ⇒ paths flatMap (path ⇒ List(r.copy(path = r.path ++ resolvePath(path, params))))
         case _ ⇒
           c.warning(t.pos, s"unknown directive [$t]")
@@ -114,8 +104,25 @@ object swaggedMacro {
           List(_)
       }
 
-    object OptimusPrime extends Transformer with RouteContextLiftable {
-      val universe = c.universe
+    object OptimusPrime extends Transformer {
+      // TODO get rid of these
+      implicit val lift3 = Liftable[RouteContext.Method.Value] {
+        case RouteContext.Method.Get ⇒
+          q"_root_.sh.echo.swagged.RouteContext.Method.Get"
+        case RouteContext.Method.Post ⇒
+          q"_root_.sh.echo.swagged.RouteContext.Method.Post"
+        case RouteContext.Method.None ⇒
+          q"_root_.sh.echo.swagged.RouteContext.Method.None"
+      }
+      implicit val lift2 = Liftable[RouteContext.Segment] {
+        case RouteContext.Segment.Param(n, d) ⇒
+          q"_root_.sh.echo.swagged.RouteContext.Segment.Param($n, $d)"
+        case RouteContext.Segment.Fixed(v) ⇒
+          q"_root_.sh.echo.swagged.RouteContext.Segment.Fixed($v)"
+      }
+      implicit val lift1 = Liftable[RouteContext] { rc ⇒
+        q"_root_.sh.echo.swagged.RouteContext(${rc.method}, ${rc.path})"
+      }
 
       override def transform(t: Tree): Tree = t match {
         case t: ValDef if t.symbol.info =:= typeOf[spray.routing.Route] ⇒

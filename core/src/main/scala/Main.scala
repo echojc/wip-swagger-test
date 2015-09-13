@@ -1,9 +1,9 @@
 import akka.actor._
 import spray.httpx._
 import spray.routing._
+import sh.echo.swagged.swagged
 
-@swagged
-trait Abc extends HttpService with SprayJsonSupport {
+@swagged trait Abc extends HttpService with SprayJsonSupport {
   val route =
     get {
       path("pets" / IntNumber / "name" / Segment) { (petId, name) ⇒
