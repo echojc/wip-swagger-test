@@ -8,6 +8,10 @@ import spray.json.DefaultJsonProtocol
 import spray.json.NullOptions
 import org.scalamacros.resetallattrs._
 
+import sh.echo.swagged.RouteContext
+import sh.echo.swagged.RouteContextLiftable
+import sh.echo.swagged.SwaggerSpec
+
 @compileTimeOnly("enable macro paradise to expand macro annotations")
 class swagged extends StaticAnnotation {
   def macroTransform(annottees: Any*): Any = macro swaggedMacro.impl
@@ -110,24 +114,8 @@ object swaggedMacro {
           List(_)
       }
 
-    object OptimusPrime extends Transformer {
-      implicit val lift3 = Liftable[RouteContext.Method] {
-        case RouteContext.Method.Get ⇒
-          q"RouteContext.Method.Get"
-        case RouteContext.Method.Post ⇒
-          q"RouteContext.Method.Post"
-        case RouteContext.Method.None ⇒
-          q"RouteContext.Method.None"
-      }
-      implicit val lift2 = Liftable[RouteContext.Segment] {
-        case RouteContext.Segment.Param(n, d) ⇒
-          q"RouteContext.Segment.Param($n, $d)"
-        case RouteContext.Segment.Fixed(v) ⇒
-          q"RouteContext.Segment.Fixed($v)"
-      }
-      implicit val lift1 = Liftable[RouteContext] { rc ⇒
-        q"RouteContext(${rc.method}, ${rc.path})"
-      }
+    object OptimusPrime extends Transformer with RouteContextLiftable {
+      val universe = c.universe
 
       override def transform(t: Tree): Tree = t match {
         case t: ValDef if t.symbol.info =:= typeOf[spray.routing.Route] ⇒
@@ -143,7 +131,7 @@ object swaggedMacro {
           val transformedRoute = q"""
             (get & path("swagger.json")) {
               complete {
-                RouteContext.toSwaggerSpec($methodCtxs)
+                sh.echo.swagged.RouteContext.toSwaggerSpec($methodCtxs)
               }
             } ~ $rhs
           """
@@ -166,76 +154,3 @@ object swaggedMacro {
     """ }
   }
 }
-
-object RouteContext {
-  val empty = RouteContext(Method.None, Nil)
-
-  sealed trait Segment
-  object Segment {
-    case class Fixed(value: String) extends Segment
-    case class Param(name: String, dataType: String) extends Segment
-  }
-
-  sealed trait Method
-  object Method {
-    case object None extends Method
-    case object Get extends Method
-    case object Post extends Method
-  }
-
-  def toSwaggerSpec(rcs: List[RouteContext]) = {
-    val groupedByPath = rcs.groupBy(_.path)
-
-    def genOperation(rc: RouteContext) = SwaggerSpec.Operation(
-      Map("200" → SwaggerSpec.Response("")),
-      rc.path collect { case Segment.Param(name, dataType) ⇒
-        SwaggerSpec.Parameter(
-          name,
-          "path",
-          true,
-          dataType
-        )
-      } match {
-        case Nil ⇒ None
-        case list ⇒ Some(list)
-      }
-    )
-
-    SwaggerSpec(
-      "2.0",
-      SwaggerSpec.Info("wip", "0"),
-      groupedByPath.map { case (path, rcs) ⇒
-        val normalisedSegments = path map {
-          case Segment.Fixed(value)   ⇒ value
-          case Segment.Param(name, _) ⇒ s"{$name}"
-        }
-        val pathStr = s"/${normalisedSegments.mkString("/")}"
-        val get = rcs.find(_.method == Method.Get) map genOperation
-        val post = rcs.find(_.method == Method.Post) map genOperation
-        pathStr → SwaggerSpec.PathInfo(get, post)
-      }.toMap
-    )
-  }
-}
-case class RouteContext(method: RouteContext.Method, path: List[RouteContext.Segment])
-
-object SwaggerSpec extends DefaultJsonProtocol {
-  case class Info(title: String, version: String)
-  case class PathInfo(get: Option[Operation] = None, post: Option[Operation] = None)
-  case class Operation(responses: Map[String, Response], parameters: Option[List[Parameter]] = None)
-  // todo: `in` should be enum
-  case class Parameter(name: String, in: String, required: Boolean, `type`: String)
-  case class Response(description: String)
-
-  implicit val jf1 = jsonFormat1(Response)
-  implicit val jf2 = jsonFormat4(Parameter)
-  implicit val jf3 = jsonFormat2(Operation)
-  implicit val jf4 = jsonFormat2(PathInfo)
-  implicit val jf5 = jsonFormat2(Info)
-  implicit val jf6 = jsonFormat3(SwaggerSpec.apply)
-}
-case class SwaggerSpec(
-  swagger: String,
-  info: SwaggerSpec.Info,
-  paths: Map[String, SwaggerSpec.PathInfo]
-)
