@@ -1,21 +1,24 @@
 # wip-swagger-test
 
-Tag a route with the `@swagged` annotation:
+Tag a trait with the `@swagged` annotation:
 
 ```scala
-@swagged
-val route =
-  get {
-    path("hello" / Segment) { name =>
-      complete {
-        s"hello, $name"
+@swagged trait MyRoute {
+  val route =
+    get {
+      path("hello" / Segment) { name =>
+        complete {
+          s"hello, $name"
+        }
       }
     }
-  }
+}
 ```
 
-The macro annotation prepends a `get & path("swagger.json")` route to the
-annotated route that returns the Swagger spec in JSON.
+The macro annotation prepends a `get & path("swagger.json")` route to each route
+defined as a `val` in that trait (a `val` is a route if it is typed as a
+`spray.routing.Route`). The prepended route returns the Swagger spec for that
+route.
 
 To see it, start the route with spray-can:
 
