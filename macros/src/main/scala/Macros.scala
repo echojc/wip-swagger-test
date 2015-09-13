@@ -2,6 +2,7 @@ import scala.language.experimental.macros
 import scala.reflect.macros.whitebox.Context
 import scala.annotation.StaticAnnotation
 import scala.annotation.compileTimeOnly
+import scala.annotation.tailrec
 import spray.routing._
 import spray.json.DefaultJsonProtocol
 import spray.json.NullOptions
@@ -36,32 +37,60 @@ object swaggedMacro {
       }
     }
 
-    def resolveSegment(t: Tree): Option[RouteContext.Segment] =
+    def resolveSegment(t: Tree, params: List[String]): (List[RouteContext.Segment], List[String]) =
       t match {
         case Apply(_, List(Literal(Constant(path: String)))) if t.symbol.fullName == "spray.routing.ImplicitPathMatcherConstruction.segmentStringToPathMatcher" ⇒
-          Some(RouteContext.Segment.Fixed(path))
+          (List(RouteContext.Segment.Fixed(path)), params)
+        case t if t.tpe <:< typeOf[spray.routing.PathMatcher[_]] ⇒
+          val paramTypes = t.tpe.baseType(typeOf[spray.routing.PathMatcher[_]].typeSymbol).typeArgs.head
+
+          @tailrec
+          def loop(hlist: Type, params: List[String], out: List[RouteContext.Segment]): (List[RouteContext.Segment], List[String]) =
+            hlist.typeArgs match {
+              case List(tpe, hlist) if tpe =:= typeOf[Int] ⇒
+                val param :: rest = params
+                val segment = RouteContext.Segment.Param(param, "integer")
+                loop(hlist, rest, segment :: out)
+              case List(tpe, hlist) if tpe =:= typeOf[String] ⇒
+                val param :: rest = params
+                val segment = RouteContext.Segment.Param(param, "string")
+                loop(hlist, rest, segment :: out)
+              case List(tpe, hlist) ⇒
+                c.warning(t.pos, s"unknown pathmatcher type [$tpe]")
+                loop(hlist, params, out)
+              case _ ⇒
+                (out, params)
+            }
+          loop(paramTypes, params, Nil)
         case _ ⇒
           c.warning(t.pos, s"unknown pathmatcher [$t]")
-          None
+          (Nil, params)
       }
 
-    def resolvePath(segments: List[Tree]): List[RouteContext.Segment] =
-      segments match {
-        case next :: rest ⇒
-          resolveSegment(next) match {
-            case Some(segment) ⇒ segment :: resolvePath(rest)
-            case None          ⇒ resolvePath(rest)
-          }
-        case Nil ⇒ Nil
-      }
+    def resolvePath(t: Tree, params: List[String]): List[RouteContext.Segment] = {
+      @tailrec
+      def loop(path: Tree, params: List[String], out: List[RouteContext.Segment]): List[RouteContext.Segment] =
+        path match {
+          case q"$lhs./[$t]($rhs)($_)" ⇒
+            val (segments, leftovers) = resolveSegment(rhs, params)
+            loop(lhs, leftovers, segments ++ out)
+          case segment ⇒
+            val (segments, leftover) = resolveSegment(segment, params)
+            if (leftover.nonEmpty)
+              c.warning(t.pos, s"unmatched params in pathmatcher!")
+            segments ++ out
+        }
+      // params are resolved back to front
+      loop(t, params.reverse, Nil)
+    }
 
-    def resolveDirective(t: Tree): RouteContext ⇒ List[RouteContext] =
+    def resolveDirective(t: Tree, params: List[String]): RouteContext ⇒ List[RouteContext] =
       t.symbol.fullName match {
         case "spray.routing.directives.MethodDirectives.get" ⇒
           (r: RouteContext) ⇒ List(r.copy(method = RouteContext.Method.Get))
         case "spray.routing.directives.PathDirectives.path" ⇒
-          val Apply(_, segments) = t
-          (r: RouteContext) ⇒ List(r.copy(path = r.path ++ resolvePath(segments)))
+          val Apply(_, paths) = t
+          (r: RouteContext) ⇒ paths flatMap (path ⇒ List(r.copy(path = r.path ++ resolvePath(path, params))))
         case _ ⇒
           c.warning(t.pos, s"unknown directive [$t]")
           List(_)
@@ -69,8 +98,11 @@ object swaggedMacro {
 
     def parseRoute(t: Tree): RouteContext ⇒ List[RouteContext] =
       t match {
-        case Directive(directive, inner) ⇒
-          resolveDirective(directive) andThen (_ flatMap parseRoute(inner))
+        case Directive(directive, body) ⇒
+          body match {
+            case q"(..$params) ⇒ $inner" ⇒ resolveDirective(directive, params map (_.name.decodedName.toString)) andThen (_ flatMap parseRoute(inner))
+            case inner                   ⇒ resolveDirective(directive, Nil) andThen (_ flatMap parseRoute(inner))
+          }
         case Complete() ⇒
           List(_)
         case _ ⇒

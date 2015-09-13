@@ -1,54 +1,23 @@
-//import akka.actor._
-//import spray.routing._
-//
-//@swagged
-//trait Abc extends HttpService {
-//  val route =
-//    get {
-//      complete {
-//        "pets!"
-//      }
-//    }
-//  //val route =
-//  //  get {
-//  //    path("pets") {
-//  //      complete {
-//  //        "pets!"// $petId!"
-//  //      }
-//  //    }
-//  //  }
-//  //val route =
-//  //  get {
-//  //    path("pets") {
-//  //      identity("some side effect")
-//  //      complete {
-//  //        "all pets"
-//  //      }
-//  //    } ~
-//  //    path("pets" / IntNumber / "foods" / IntNumber) { (petId, foodId) ⇒
-//  //      complete {
-//  //        s"just pet $petId with food $foodId"
-//  //      }
-//  //    } ~
-//  //    path("owners" / Segment) { name ⇒
-//  //      complete {
-//  //        s"owner $name"
-//  //      }
-//  //    }
-//  //  } ~
-//  //  post {
-//  //    path("pets") {
-//  //      complete {
-//  //        "posted all pets!"
-//  //      }
-//  //    }
-//  //  }
-//}
-//
-//object Main extends App with SimpleRoutingApp with Abc {
-//  implicit val system = ActorSystem()
-//
-//  startServer(interface = "localhost", port = 8080) {
-//    route
-//  }
-//}
+import akka.actor._
+import spray.httpx._
+import spray.routing._
+
+@swagged
+trait Abc extends HttpService with SprayJsonSupport {
+  val route =
+    get {
+      path("pets" / IntNumber / "name" / Segment) { (petId, name) ⇒
+        complete {
+          "pets!"//s"pet id=[$petId] name=[$name]"
+        }
+      }
+    }
+}
+
+object Main extends App with SimpleRoutingApp with Abc {
+  implicit val system = ActorSystem()
+
+  startServer(interface = "0.0.0.0", port = 8080) {
+    route
+  }
+}

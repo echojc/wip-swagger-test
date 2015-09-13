@@ -57,6 +57,37 @@ class Test extends Spec {
       )
     }
   }
+
+  it("path with params") {
+    @swagged trait ParamsGet extends TestRoute {
+      val route =
+        get {
+          path(Segment / IntNumber / "const") { (name, catId) ⇒
+            complete {
+              s"$name [$catId] says meow"
+            }
+          }
+        }
+    }
+
+    testRoute(new ParamsGet{}) {
+      responseAs[SwaggerSpec] shouldBe SwaggerSpec(
+        "2.0",
+        SwaggerSpec.Info("wip", "0"),
+        Map(
+          "/{name}/{catId}/const" → SwaggerSpec.PathInfo(
+            get = Some(SwaggerSpec.Operation(Map(
+              "200" → SwaggerSpec.Response("")
+            ),
+            Some(List(
+              SwaggerSpec.Parameter("name", in = "path", required = true, `type` = "string"),
+              SwaggerSpec.Parameter("catId", in = "path", required = true, `type` = "integer")
+            ))))
+          )
+        )
+      )
+    }
+  }
 }
 
 trait Spec
