@@ -1,9 +1,9 @@
 # wip-swagger-test
 
-Tag a route with the `@swagger` annotation:
+Tag a route with the `@swagged` annotation:
 
 ```scala
-@swagger
+@swagged
 val route =
   get {
     path("hello" / Segment) { name =>
